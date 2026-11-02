@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Interactive 3D E. coli</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Arial,sans-serif}
+#viewer{position:relative;width:100%;height:100%;min-height:560px;background:radial-gradient(circle at 50% 35%,#19334a 0%,#08131d 55%,#03070b 100%);border-radius:18px;overflow:hidden}
+#title{position:absolute;top:18px;left:20px;z-index:5;color:#fff;font-size:24px;font-weight:800;letter-spacing:.5px;text-shadow:0 2px 10px #000}
+#subtitle{position:absolute;top:51px;left:22px;z-index:5;color:#b8d7e8;font-size:13px}
+#tip{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);z-index:5;color:#d9edf7;background:#07121bcc;padding:9px 14px;border-radius:20px;font-size:12px;white-space:nowrap}
+.label{color:white;background:rgba(8,22,31,.86);border:1px solid rgba(119,220,255,.75);padding:6px 10px;border-radius:7px;font-size:12px;font-weight:700;box-shadow:0 3px 14px rgba(0,0,0,.45);pointer-events:none;white-space:nowrap}
+.hotspot{cursor:pointer}
+#info{position:absolute;right:18px;top:18px;width:250px;z-index:10;color:#fff;background:rgba(5,14,22,.88);border:1px solid rgba(116,218,255,.35);border-radius:14px;padding:16px;display:none;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+#info h3{margin:0 0 7px;font-size:18px;color:#8ee6ff}#info p{margin:0;line-height:1.45;font-size:13px;color:#d7e4ea}#close{position:absolute;right:10px;top:8px;cursor:pointer;font-size:20px}
+#loading{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;background:#06111ae8;z-index:20;font-weight:700}
+</style>
+</head>
+<body>
+<div id="viewer">
+ <div id="loading">Loading 3D E. coli…</div>
+ <div id="title">Escherichia coli (E. coli)</div>
+ <div id="subtitle">Drag to rotate • Scroll to zoom • Click labels to learn more</div>
+ <div id="tip">Interactive 3D model</div>
+ <div id="info"><span id="close">×</span><h3 id="infoTitle"></h3><p id="infoText"></p></div>
+</div>
+<script type="importmap">
+{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+const container=document.getElementById('viewer');
+const scene=new THREE.Scene();
+scene.fog=new THREE.Fog(0x06111a,3,9);
+const camera=new THREE.PerspectiveCamera(40,container.clientWidth/container.clientHeight,.01,100);
+camera.position.set(2.2,1.25,3.2);
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(container.clientWidth,container.clientHeight);renderer.outputColorSpace=THREE.SRGBColorSpace;container.appendChild(renderer.domElement);
+const labelRenderer=new CSS2DRenderer();labelRenderer.setSize(container.clientWidth,container.clientHeight);labelRenderer.domElement.style.position='absolute';labelRenderer.domElement.style.top='0';labelRenderer.domElement.style.pointerEvents='none';container.appendChild(labelRenderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.06;controls.autoRotate=true;controls.autoRotateSpeed=.7;controls.minDistance=1.2;controls.maxDistance=6;
+scene.add(new THREE.HemisphereLight(0xb9edff,0x071018,2.4));
+const key=new THREE.DirectionalLight(0xffffff,3.2);key.position.set(3,4,4);scene.add(key);
+const rim=new THREE.DirectionalLight(0x58d9ff,2.2);rim.position.set(-4,1,-3);scene.add(rim);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshBasicMaterial({color:0x07131c,transparent:true,opacity:.45}));floor.rotation.x=-Math.PI/2;floor.position.y=-1.05;scene.add(floor);
+
+let model, pickables=[];
+const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
+const info={
+ 'Cell Envelope':'Protective outer layers surrounding the bacterial cell.',
+ 'Cell Body':'The main bacterial cell structure containing the internal components.',
+ 'Flagellum':'A long whip-like structure used primarily for movement.',
+ 'Surface Structures':'External structures that help the bacterium interact with its environment.'
+};
+function addLabel(text,pos,description){const d=document.createElement('div');d.className='label hotspot';d.textContent=text;const o=new CSS2DObject(d);o.position.set(...pos);scene.add(o);d.style.pointerEvents='auto';d.addEventListener('click',()=>showInfo(text,description));}
+function showInfo(title,description){document.getElementById('infoTitle').textContent=title;document.getElementById('infoText').textContent=description;document.getElementById('info').style.display='block';}
+document.getElementById('close').onclick=()=>document.getElementById('info').style.display='none';
+
+const loader=new GLTFLoader();
+loader.load('./ecoli_model.glb',gltf=>{
+ model=gltf.scene;
+ const box=new THREE.Box3().setFromObject(model), size=box.getSize(new THREE.Vector3()), center=box.getCenter(new THREE.Vector3());
+ model.position.sub(center);
+ const max=Math.max(size.x,size.y,size.z);model.scale.setScalar(2.15/max);
+ model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true;pickables.push(o);if(!o.material || o.material.type==='MeshStandardMaterial')o.material=new THREE.MeshStandardMaterial({color:0x5db8cf,roughness:.42,metalness:.08});}});
+ scene.add(model);
+ addLabel('Cell Envelope',[1.35,.25,.05],info['Cell Envelope']);
+ addLabel('Cell Body',[-1.25,.15,.15],info['Cell Body']);
+ addLabel('Surface Structures',[.45,.85,-.25],info['Surface Structures']);
+ addLabel('Flagellum',[1.45,-.25,-.45],info['Flagellum']);
+ document.getElementById('loading').style.display='none';
+},undefined,e=>{document.getElementById('loading').textContent='Model failed to load. Make sure ecoli_model.glb is in the same folder as this HTML file.';console.error(e)});
+
+function resize(){camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);labelRenderer.setSize(container.clientWidth,container.clientHeight)}window.addEventListener('resize',resize);
+function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);labelRenderer.render(scene,camera)}animate();
+</script>
+</body></html>
